@@ -5,6 +5,7 @@ import unittest
 
 from directory_structure_tool.archives import normalize_archive_member_parts
 from directory_structure_tool.paths import is_subpath, sanitize_text_for_report
+from directory_structure_tool.repositories import parse_repository_reference, redact_url_secrets
 from directory_structure_tool.report import save_directory_structure
 
 
@@ -61,6 +62,63 @@ class ReportTests(unittest.TestCase):
             self.assertIn("- main.py", report)
             self.assertNotIn(".git", report)
             self.assertNotIn("package-lock.json", report)
+
+
+class RepositoryTests(unittest.TestCase):
+    def test_parse_github_repository_url(self):
+        reference = parse_repository_reference("https://github.com/octocat/Hello-World")
+
+        self.assertEqual(reference.provider, "GitHub")
+        self.assertEqual(reference.clone_url, "https://github.com/octocat/Hello-World.git")
+        self.assertEqual(reference.display_name, "Hello-World")
+
+    def test_parse_gitlab_nested_repository_url(self):
+        reference = parse_repository_reference("https://gitlab.com/group/subgroup/project/-/tree/main")
+
+        self.assertEqual(reference.provider, "GitLab")
+        self.assertEqual(reference.clone_url, "https://gitlab.com/group/subgroup/project.git")
+        self.assertEqual(reference.display_name, "project")
+
+    def test_parse_gitflic_repository_url(self):
+        reference = parse_repository_reference("https://gitflic.ru/project/dbi471/git-switch")
+
+        self.assertEqual(reference.provider, "GitFlic")
+        self.assertEqual(reference.clone_url, "https://gitflic.ru/project/dbi471/git-switch.git")
+        self.assertEqual(reference.display_name, "git-switch")
+
+    def test_parse_gitverse_repository_url(self):
+        reference = parse_repository_reference("https://gitverse.ru/owner/project")
+
+        self.assertEqual(reference.provider, "GitVerse")
+        self.assertEqual(reference.clone_url, "https://gitverse.ru/owner/project.git")
+        self.assertEqual(reference.display_name, "project")
+
+    def test_parse_sourcecraft_repository_url(self):
+        reference = parse_repository_reference("https://sourcecraft.dev/examples/self-hosted-worker")
+
+        self.assertEqual(reference.provider, "SourceCraft")
+        self.assertEqual(reference.clone_url, "https://git@git.sourcecraft.dev/examples/self-hosted-worker.git")
+        self.assertEqual(reference.display_name, "self-hosted-worker")
+
+    def test_parse_scp_like_repository_url(self):
+        reference = parse_repository_reference("git@github.com:octocat/Hello-World.git")
+
+        self.assertEqual(reference.provider, "GitHub")
+        self.assertEqual(reference.clone_url, "git@github.com:octocat/Hello-World.git")
+        self.assertEqual(reference.display_name, "Hello-World")
+
+    def test_parse_ssh_repository_url(self):
+        reference = parse_repository_reference("ssh://git@gitlab.com/group/project.git")
+
+        self.assertEqual(reference.provider, "GitLab")
+        self.assertEqual(reference.clone_url, "ssh://git@gitlab.com/group/project.git")
+        self.assertEqual(reference.display_name, "project")
+
+    def test_redact_url_secrets(self):
+        self.assertEqual(
+            redact_url_secrets("fatal: https://token@example.com/repo.git failed"),
+            "fatal: https://***@example.com/repo.git failed",
+        )
 
 
 class CompatibilityTests(unittest.TestCase):

@@ -42,6 +42,18 @@ from directory_structure_tool.paths import (
     sanitize_text_for_report,
     vscode_name_key,
 )
+from directory_structure_tool.repositories import (
+    RepositoryReference,
+    build_repository_cache_key,
+    build_sourcecraft_clone_url,
+    is_repository_reference,
+    parse_http_repository_url,
+    parse_repository_reference,
+    parse_scp_like_repository_url,
+    parse_transport_repository_url,
+    redact_url_secrets,
+    resolve_repository_path,
+)
 from directory_structure_tool.report import (
     save_directory_structure,
     save_file_content,

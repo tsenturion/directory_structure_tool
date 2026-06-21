@@ -1,6 +1,6 @@
 # Directory Structure Tool
 
-Утилита для генерации текстового отчета по структуре папки или архива.
+Утилита для генерации текстового отчета по структуре папки, архива или git-репозитория.
 
 ```bat
 python directory_structure.py
@@ -11,6 +11,9 @@ python directory_structure.py
 ```bat
 python -m directory_structure_tool
 ```
+
+Поддерживаются URL репозиториев GitHub, GitLab, GitVerse, GitFlic и SourceCraft.
+Для приватных репозиториев используйте уже настроенные git credentials или URL с токеном.
 
 ## Структура
 

@@ -4,6 +4,7 @@ __pycache__/
 
 directory_structure.txt
 .directory_structure_state.json
+.directory_structure_repos/
 __directory_structure_extract_*/
 
 .DS_Store

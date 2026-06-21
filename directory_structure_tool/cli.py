@@ -8,6 +8,7 @@ from .archives import (
 from .clipboard import copy_text_to_clipboard
 from .config import ARCHIVE_EXTENSIONS, DOWNLOADS_DIR, NAMES_ONLY_DIRS, OUTPUT_FILENAME
 from .paths import clean_user_input, sanitize_text_for_report
+from .repositories import is_repository_reference, resolve_repository_path
 from .report import save_directory_structure
 from .state import get_cached_archive_result, get_last_report_path, load_state, save_state
 
@@ -23,6 +24,8 @@ def resolve_start_path(raw_path, latest_archive, state):
         return last_path
 
     if raw_path:
+        if is_repository_reference(raw_path):
+            return resolve_repository_path(raw_path)
         _, ext = os.path.splitext(raw_path)
         if os.path.isfile(raw_path) and ext.casefold() in ARCHIVE_EXTENSIONS:
             return resolve_archive_path(raw_path, state)
@@ -93,7 +96,7 @@ def main():
         print(f"Последний рабочий путь для режима 3: {last_report_path}")
 
     first_input = input(
-        "\nВведите путь к папке/архиву, '2' для режима только названий, '3' для прошлого пути или Enter для последнего архива: "
+        "\nВведите путь к папке/архиву, URL git-репозитория, '2' для режима только названий, '3' для прошлого пути или Enter для последнего архива: "
     )
     first_input = clean_user_input(first_input)
     names_only_mode = first_input == "2"
@@ -101,7 +104,7 @@ def main():
     try:
         if names_only_mode:
             second_input = input(
-                "\nВведите путь к папке/архиву, '3' для прошлого пути или Enter для последнего архива: "
+                "\nВведите путь к папке/архиву, URL git-репозитория, '3' для прошлого пути или Enter для последнего архива: "
             )
             start_path = resolve_start_path(second_input, latest_archive, state)
         else:
