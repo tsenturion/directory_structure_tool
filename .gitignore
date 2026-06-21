@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+directory_structure.txt
+.directory_structure_state.json
+__directory_structure_extract_*/
+
+.DS_Store
+Thumbs.db
