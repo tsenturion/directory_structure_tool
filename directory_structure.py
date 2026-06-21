@@ -1,3 +1,9 @@
+from directory_structure_tool.api import (
+    build_report_text,
+    generate_report_text,
+    get_names_only_dirs,
+    resolved_report_source,
+)
 from directory_structure_tool.archives import (
     add_rar_candidates,
     ensure_directory_target,

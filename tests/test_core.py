@@ -2,7 +2,9 @@ import io
 import os
 import tempfile
 import unittest
+import zipfile
 
+from directory_structure_tool.api import generate_report_text
 from directory_structure_tool.archives import normalize_archive_member_parts
 from directory_structure_tool.paths import is_subpath, sanitize_text_for_report
 from directory_structure_tool.repositories import parse_repository_reference, redact_url_secrets
@@ -62,6 +64,28 @@ class ReportTests(unittest.TestCase):
             self.assertIn("- main.py", report)
             self.assertNotIn(".git", report)
             self.assertNotIn("package-lock.json", report)
+
+    def test_generate_report_text_supports_single_file(self):
+        with tempfile.TemporaryDirectory() as root:
+            file_path = os.path.join(root, "main.go")
+            with open(file_path, "w", encoding="utf-8") as file:
+                file.write("package main\n")
+
+            report = generate_report_text(file_path)
+
+            self.assertIn("- main.go", report)
+            self.assertIn("package main", report)
+
+    def test_generate_report_text_supports_zip_archive(self):
+        with tempfile.TemporaryDirectory() as root:
+            archive_path = os.path.join(root, "work.zip")
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("project/main.go", "package main\n")
+
+            report = generate_report_text(archive_path)
+
+            self.assertIn("- main.go", report)
+            self.assertIn("package main", report)
 
 
 class RepositoryTests(unittest.TestCase):
@@ -127,6 +151,7 @@ class CompatibilityTests(unittest.TestCase):
 
         self.assertIs(directory_structure.save_directory_structure, save_directory_structure)
         self.assertIs(directory_structure.normalize_archive_member_parts, normalize_archive_member_parts)
+        self.assertIs(directory_structure.generate_report_text, generate_report_text)
 
 
 if __name__ == "__main__":
