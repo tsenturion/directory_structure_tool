@@ -6,10 +6,10 @@ from .archives import (
     resolve_archive_path,
 )
 from .clipboard import copy_text_to_clipboard
-from .config import ARCHIVE_EXTENSIONS, DOWNLOADS_DIR, NAMES_ONLY_DIRS, OUTPUT_FILENAME
+from .config import ARCHIVE_EXTENSIONS, DOWNLOADS_DIR, OUTPUT_FILENAME
 from .paths import clean_user_input, sanitize_text_for_report
 from .repositories import is_repository_reference, resolve_repository_path
-from .report import save_directory_structure
+from .report import resolve_names_only_dirs, write_report_file
 from .state import get_cached_archive_result, get_last_report_path, load_state, save_state
 
 
@@ -38,34 +38,11 @@ def resolve_start_path(raw_path, latest_archive, state):
 
 
 def get_names_only_dirs(start_path):
-    names_only_dirs = []
-    for names_only_input in sorted(NAMES_ONLY_DIRS):
-        if os.path.isabs(names_only_input):
-            names_only_dir = os.path.abspath(names_only_input)
-        else:
-            names_only_dir = os.path.abspath(os.path.join(start_path, names_only_input))
-        if not os.path.isdir(names_only_dir):
-            continue
-        names_only_dirs.append(names_only_dir)
-    return names_only_dirs
+    return resolve_names_only_dirs(start_path)
 
 
 def write_report(start_path, output_filename, names_only_dirs, names_only_mode):
-    with open(output_filename, 'w', encoding='utf-8') as output_file:
-        output_file.write(f"Структура папки: {start_path}\n\n")
-        if names_only_mode:
-            output_file.write("Режим: только названия файлов, без содержимого\n\n")
-        if names_only_dirs:
-            output_file.write("Без содержимого файлов для папок:\n")
-            for p in names_only_dirs:
-                output_file.write(f"- {p}\n")
-            output_file.write("\n")
-        save_directory_structure(
-            start_path,
-            output_file,
-            names_only_dirs=names_only_dirs,
-            names_only_mode=names_only_mode
-        )
+    write_report_file(start_path, output_filename, names_only_dirs, names_only_mode)
 
 
 def sanitize_report_file(output_filename):

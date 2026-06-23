@@ -1,3 +1,4 @@
+import io
 import os
 
 from .config import (
@@ -5,9 +6,43 @@ from .config import (
     IGNORED_DIRS,
     IGNORED_FILE_EXTENSIONS,
     IGNORED_FILES,
+    NAMES_ONLY_DIRS,
     TEXT_ENCODINGS,
 )
 from .paths import is_subpath, sanitize_text_for_report, vscode_name_key
+
+
+def resolve_names_only_dirs(start_path, names_only_dirs=None):
+    resolved_dirs = []
+    configured_dirs = NAMES_ONLY_DIRS if names_only_dirs is None else names_only_dirs
+    for names_only_input in sorted(configured_dirs):
+        if os.path.isabs(names_only_input):
+            names_only_dir = os.path.abspath(names_only_input)
+        else:
+            names_only_dir = os.path.abspath(os.path.join(start_path, names_only_input))
+        if os.path.isdir(names_only_dir):
+            resolved_dirs.append(names_only_dir)
+    return resolved_dirs
+
+
+def write_report_content(output_file, start_path, names_only_dirs=None, names_only_mode=False):
+    save_directory_structure(
+        start_path,
+        output_file,
+        names_only_dirs=names_only_dirs,
+        names_only_mode=names_only_mode,
+    )
+
+
+def build_report_text(start_path, names_only_dirs=None, names_only_mode=False):
+    output = io.StringIO()
+    write_report_content(output, start_path, names_only_dirs, names_only_mode)
+    return sanitize_text_for_report(output.getvalue())
+
+
+def write_report_file(start_path, output_filename, names_only_dirs=None, names_only_mode=False):
+    with open(output_filename, 'w', encoding='utf-8') as output_file:
+        write_report_content(output_file, start_path, names_only_dirs, names_only_mode)
 
 
 def should_skip_file_content(file_path):

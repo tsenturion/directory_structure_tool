@@ -1,45 +1,21 @@
-import io
 import os
 import shutil
 import tempfile
 from contextlib import contextmanager
 
-from .archives import extract_rar_to_dir, extract_zip_to_dir
-from .config import ARCHIVE_EXTENSIONS, NAMES_ONLY_DIRS
-from .paths import sanitize_text_for_report
+from .archives import extract_archive_to_dir
+from .config import ARCHIVE_EXTENSIONS
 from .repositories import clone_repository, parse_repository_reference
-from .report import save_directory_structure
+from .report import build_report_text as _build_report_text
+from .report import resolve_names_only_dirs
 
 
 def get_names_only_dirs(start_path, names_only_dirs=None):
-    resolved_dirs = []
-    for names_only_input in sorted(names_only_dirs or NAMES_ONLY_DIRS):
-        if os.path.isabs(names_only_input):
-            names_only_dir = os.path.abspath(names_only_input)
-        else:
-            names_only_dir = os.path.abspath(os.path.join(start_path, names_only_input))
-        if os.path.isdir(names_only_dir):
-            resolved_dirs.append(names_only_dir)
-    return resolved_dirs
+    return resolve_names_only_dirs(start_path, names_only_dirs or None)
 
 
 def build_report_text(start_path, names_only_dirs=None, names_only_mode=False):
-    output = io.StringIO()
-    output.write(f"Структура папки: {start_path}\n\n")
-    if names_only_mode:
-        output.write("Режим: только названия файлов, без содержимого\n\n")
-    if names_only_dirs:
-        output.write("Без содержимого файлов для папок:\n")
-        for path in names_only_dirs:
-            output.write(f"- {path}\n")
-        output.write("\n")
-    save_directory_structure(
-        start_path,
-        output,
-        names_only_dirs=names_only_dirs,
-        names_only_mode=names_only_mode,
-    )
-    return sanitize_text_for_report(output.getvalue())
+    return _build_report_text(start_path, names_only_dirs, names_only_mode)
 
 
 def _select_archive_root(extract_dir):
@@ -80,12 +56,7 @@ def resolved_report_source(source):
         if ext in ARCHIVE_EXTENSIONS:
             extract_dir = os.path.join(temp_root, "extracted")
             os.makedirs(extract_dir, exist_ok=False)
-            if ext == ".zip":
-                extract_zip_to_dir(source_path, extract_dir)
-            elif ext == ".rar":
-                extract_rar_to_dir(source_path, extract_dir)
-            else:
-                raise RuntimeError(f"Неподдерживаемый тип архива: {ext}")
+            extract_archive_to_dir(source_path, extract_dir)
             yield _select_archive_root(extract_dir)
             return
 

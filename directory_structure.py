@@ -7,6 +7,7 @@ from directory_structure_tool.api import (
 from directory_structure_tool.archives import (
     add_rar_candidates,
     ensure_directory_target,
+    extract_archive_to_dir,
     extract_archive_to_report_folder,
     extract_rar_to_dir,
     extract_zip_to_dir,

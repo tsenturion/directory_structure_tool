@@ -112,6 +112,19 @@ def extract_zip_to_dir(archive_path, target_dir):
                 shutil.copyfileobj(source, target)
 
 
+def extract_archive_to_dir(archive_path, target_dir):
+    """Распаковывает поддерживаемый архив в указанную папку."""
+    _, archive_ext = os.path.splitext(archive_path)
+    archive_ext = archive_ext.casefold()
+
+    if archive_ext == ".zip":
+        extract_zip_to_dir(archive_path, target_dir)
+    elif archive_ext == ".rar":
+        extract_rar_to_dir(archive_path, target_dir)
+    else:
+        raise RuntimeError(f"Неподдерживаемый тип архива: {archive_ext}")
+
+
 def list_zip_member_parts(archive_path):
     """Возвращает безопасные пути zip-элементов и признак папки."""
     members = []
@@ -339,10 +352,7 @@ def extract_archive_to_report_folder(archive_path):
     os.makedirs(staging_dir, exist_ok=False)
 
     try:
-        if archive_ext == ".zip":
-            extract_zip_to_dir(archive_path, staging_dir)
-        else:
-            extract_rar_to_dir(archive_path, staging_dir)
+        extract_archive_to_dir(archive_path, staging_dir)
 
         top_entries = os.listdir(staging_dir)
         if len(top_entries) == 1 and os.path.isdir(os.path.join(staging_dir, top_entries[0])):

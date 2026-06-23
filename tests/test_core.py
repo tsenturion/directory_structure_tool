@@ -4,8 +4,9 @@ import tempfile
 import unittest
 import zipfile
 
-from directory_structure_tool.api import generate_report_text
+from directory_structure_tool.api import build_report_text, generate_report_text, get_names_only_dirs
 from directory_structure_tool.archives import normalize_archive_member_parts
+from directory_structure_tool.cli import write_report
 from directory_structure_tool.paths import is_subpath, sanitize_text_for_report
 from directory_structure_tool.repositories import parse_repository_reference, redact_url_secrets
 from directory_structure_tool.report import save_directory_structure
@@ -75,6 +76,36 @@ class ReportTests(unittest.TestCase):
 
             self.assertIn("- main.go", report)
             self.assertIn("package main", report)
+
+    def test_generate_report_text_has_no_metadata_header(self):
+        with tempfile.TemporaryDirectory() as root:
+            file_path = os.path.join(root, "main.py")
+            with open(file_path, "w", encoding="utf-8") as file:
+                file.write("print('ok')\n")
+
+            report = generate_report_text(root)
+
+            self.assertTrue(report.startswith("- main.py\n"))
+            self.assertNotIn("Структура папки:", report)
+            self.assertNotIn("Режим:", report)
+            self.assertNotIn("Без содержимого файлов для папок:", report)
+
+    def test_write_report_has_no_metadata_header(self):
+        with tempfile.TemporaryDirectory() as root:
+            file_path = os.path.join(root, "main.py")
+            output_path = os.path.join(root, "report.txt")
+            with open(file_path, "w", encoding="utf-8") as file:
+                file.write("print('ok')\n")
+
+            write_report(root, output_path, [], False)
+
+            with open(output_path, "r", encoding="utf-8") as file:
+                report = file.read()
+
+            self.assertTrue(report.startswith("- main.py\n"))
+            self.assertNotIn("Структура папки:", report)
+            self.assertNotIn("Режим:", report)
+            self.assertNotIn("Без содержимого файлов для папок:", report)
 
     def test_generate_report_text_supports_zip_archive(self):
         with tempfile.TemporaryDirectory() as root:
@@ -152,6 +183,8 @@ class CompatibilityTests(unittest.TestCase):
         self.assertIs(directory_structure.save_directory_structure, save_directory_structure)
         self.assertIs(directory_structure.normalize_archive_member_parts, normalize_archive_member_parts)
         self.assertIs(directory_structure.generate_report_text, generate_report_text)
+        self.assertIs(directory_structure.build_report_text, build_report_text)
+        self.assertIs(directory_structure.get_names_only_dirs, get_names_only_dirs)
 
 
 if __name__ == "__main__":
