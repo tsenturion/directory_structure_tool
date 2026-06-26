@@ -1,4 +1,4 @@
-from .api import build_report_text, generate_report_text
+from .api import generate_report_text
 from .cli import main
 
-__all__ = ["build_report_text", "generate_report_text", "main"]
+__all__ = ["generate_report_text", "main"]

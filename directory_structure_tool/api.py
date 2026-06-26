@@ -5,17 +5,8 @@ from contextlib import contextmanager
 
 from .archives import extract_archive_to_dir
 from .config import ARCHIVE_EXTENSIONS
-from .repositories import clone_repository, parse_repository_reference
-from .report import build_report_text as _build_report_text
-from .report import resolve_names_only_dirs
-
-
-def get_names_only_dirs(start_path, names_only_dirs=None):
-    return resolve_names_only_dirs(start_path, names_only_dirs or None)
-
-
-def build_report_text(start_path, names_only_dirs=None, names_only_mode=False):
-    return _build_report_text(start_path, names_only_dirs, names_only_mode)
+from .repositories import clone_repository, get_repository_report_path, parse_repository_reference
+from .report import build_report_text, resolve_names_only_dirs
 
 
 def _select_archive_root(extract_dir):
@@ -38,7 +29,7 @@ def resolved_report_source(source):
             temp_root = tempfile.mkdtemp(prefix="directory_structure_repo_")
             target_dir = os.path.join(temp_root, reference.display_name or "repository")
             clone_repository(reference, target_dir)
-            yield target_dir
+            yield get_repository_report_path(reference, target_dir)
             return
 
         source_path = os.path.abspath(source)
@@ -71,5 +62,5 @@ def resolved_report_source(source):
 
 def generate_report_text(source, names_only_mode=False):
     with resolved_report_source(source) as start_path:
-        names_only_dirs = get_names_only_dirs(start_path)
+        names_only_dirs = resolve_names_only_dirs(start_path)
         return build_report_text(start_path, names_only_dirs, names_only_mode)

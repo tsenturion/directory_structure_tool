@@ -4,11 +4,11 @@ import tempfile
 import unittest
 import zipfile
 
-from directory_structure_tool.api import build_report_text, generate_report_text, get_names_only_dirs
+from directory_structure_tool import generate_report_text
 from directory_structure_tool.archives import normalize_archive_member_parts
 from directory_structure_tool.cli import write_report
 from directory_structure_tool.paths import is_subpath, sanitize_text_for_report
-from directory_structure_tool.repositories import parse_repository_reference, redact_url_secrets
+from directory_structure_tool.repositories import get_repository_report_path, parse_repository_reference, redact_url_secrets
 from directory_structure_tool.report import save_directory_structure
 
 
@@ -126,6 +126,17 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(reference.provider, "GitHub")
         self.assertEqual(reference.clone_url, "https://github.com/octocat/Hello-World.git")
         self.assertEqual(reference.display_name, "Hello-World")
+        self.assertEqual(reference.ref, "")
+        self.assertEqual(reference.subpath, "")
+
+    def test_parse_github_repository_subfolder_url(self):
+        reference = parse_repository_reference("https://github.com/AlexanderV823/Go/tree/main/GoPro/hw_1")
+
+        self.assertEqual(reference.provider, "GitHub")
+        self.assertEqual(reference.clone_url, "https://github.com/AlexanderV823/Go.git")
+        self.assertEqual(reference.display_name, "Go")
+        self.assertEqual(reference.ref, "main")
+        self.assertEqual(reference.subpath, "GoPro/hw_1")
 
     def test_parse_gitlab_nested_repository_url(self):
         reference = parse_repository_reference("https://gitlab.com/group/subgroup/project/-/tree/main")
@@ -133,6 +144,17 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(reference.provider, "GitLab")
         self.assertEqual(reference.clone_url, "https://gitlab.com/group/subgroup/project.git")
         self.assertEqual(reference.display_name, "project")
+        self.assertEqual(reference.ref, "main")
+        self.assertEqual(reference.subpath, "")
+
+    def test_repository_report_path_uses_subfolder(self):
+        reference = parse_repository_reference("https://github.com/AlexanderV823/Go/tree/main/GoPro/hw_1")
+        with tempfile.TemporaryDirectory() as root:
+            target_dir = os.path.join(root, "repo")
+            report_dir = os.path.join(target_dir, "GoPro", "hw_1")
+            os.makedirs(report_dir)
+
+            self.assertEqual(get_repository_report_path(reference, target_dir), report_dir)
 
     def test_parse_gitflic_repository_url(self):
         reference = parse_repository_reference("https://gitflic.ru/project/dbi471/git-switch")
@@ -174,17 +196,6 @@ class RepositoryTests(unittest.TestCase):
             redact_url_secrets("fatal: https://token@example.com/repo.git failed"),
             "fatal: https://***@example.com/repo.git failed",
         )
-
-
-class CompatibilityTests(unittest.TestCase):
-    def test_legacy_script_reexports_core_functions(self):
-        import directory_structure
-
-        self.assertIs(directory_structure.save_directory_structure, save_directory_structure)
-        self.assertIs(directory_structure.normalize_archive_member_parts, normalize_archive_member_parts)
-        self.assertIs(directory_structure.generate_report_text, generate_report_text)
-        self.assertIs(directory_structure.build_report_text, build_report_text)
-        self.assertIs(directory_structure.get_names_only_dirs, get_names_only_dirs)
 
 
 if __name__ == "__main__":

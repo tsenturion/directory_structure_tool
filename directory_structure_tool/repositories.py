@@ -29,6 +29,8 @@ class RepositoryReference:
     clone_url: str
     display_name: str
     cache_key: str
+    ref: str = ""
+    subpath: str = ""
 
 
 def normalize_host(host):
@@ -55,6 +57,60 @@ def trim_web_path(parts):
             break
         trimmed.append(part)
     return trimmed
+
+
+def normalize_repository_subpath(parts):
+    safe_parts = []
+    for part in parts:
+        if part in ("", ".", "..") or ":" in part:
+            return ""
+        safe_parts.append(part)
+    return "/".join(safe_parts)
+
+
+def parse_web_ref_and_subpath(parts):
+    if not parts:
+        return "", ""
+    marker = parts[0]
+    if marker not in {"tree", "blob", "src"} or len(parts) < 2:
+        return "", ""
+    ref = parts[1]
+    subpath = normalize_repository_subpath(parts[2:])
+    return ref, subpath
+
+
+def split_http_repository_parts(parsed, host):
+    parts = split_repo_path(parsed.path)
+    if not parts:
+        return [], "", ""
+
+    if host == "gitlab.com" and "-" in parts:
+        marker_index = parts.index("-")
+        repo_parts = parts[:marker_index]
+        ref, subpath = parse_web_ref_and_subpath(parts[marker_index + 1:])
+        return repo_parts, ref, subpath
+
+    if host in {"github.com", "gitverse.ru"} and len(parts) >= 2:
+        repo_parts = parts[:2]
+        ref, subpath = parse_web_ref_and_subpath(parts[2:])
+        return repo_parts, ref, subpath
+
+    if host == SOURCECRAFT_WEB_HOST and len(parts) >= 2:
+        repo_parts = parts[:2]
+        ref, subpath = parse_web_ref_and_subpath(parts[2:])
+        return repo_parts, ref, subpath
+
+    if host == "gitflic.ru":
+        if parts[0] == "project" and len(parts) >= 3:
+            repo_parts = parts[:3]
+            ref, subpath = parse_web_ref_and_subpath(parts[3:])
+            return repo_parts, ref, subpath
+        if len(parts) >= 2:
+            repo_parts = ["project", *parts[:2]]
+            ref, subpath = parse_web_ref_and_subpath(parts[2:])
+            return repo_parts, ref, subpath
+
+    return trim_web_path(parts), "", ""
 
 
 def get_provider_for_host(host, path_parts):
@@ -94,17 +150,7 @@ def build_sourcecraft_clone_url(repo_parts):
 
 
 def get_repo_parts_from_url(parsed, host):
-    parts = trim_web_path(split_repo_path(parsed.path))
-    if not parts:
-        return []
-
-    if host == "gitflic.ru" and parts[0] != "project" and len(parts) >= 2:
-        parts = ["project", *parts[:2]]
-    elif host in {"github.com", "gitverse.ru"} and len(parts) >= 2:
-        parts = parts[:2]
-    elif host == SOURCECRAFT_WEB_HOST and len(parts) >= 2:
-        parts = parts[:2]
-
+    parts, _, _ = split_http_repository_parts(parsed, host)
     return parts
 
 
@@ -114,7 +160,7 @@ def parse_http_repository_url(value):
         return None
 
     host = normalize_host(parsed.hostname)
-    parts = get_repo_parts_from_url(parsed, host)
+    parts, ref, subpath = split_http_repository_parts(parsed, host)
     provider = get_provider_for_host(host, parts)
     if not provider or not parts:
         return None
@@ -130,7 +176,9 @@ def parse_http_repository_url(value):
         provider=provider,
         clone_url=clone_url,
         display_name=display_name,
-        cache_key=build_repository_cache_key(provider, clone_url, display_name),
+        cache_key=build_repository_cache_key(provider, clone_url, display_name, ref=ref, subpath=subpath),
+        ref=ref,
+        subpath=subpath,
     )
 
 
@@ -194,9 +242,14 @@ def redact_url_secrets(text):
     return re.sub(r"(https?://)([^/@\s]+)@", r"\1***@", text)
 
 
-def build_repository_cache_key(provider, clone_url, display_name):
+def build_repository_cache_key(provider, clone_url, display_name, ref="", subpath=""):
     safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", display_name).strip("._-") or "repository"
-    url_hash = hashlib.sha256(redact_url_secrets(clone_url).casefold().encode("utf-8")).hexdigest()[:12]
+    hash_source = "\n".join([
+        redact_url_secrets(clone_url).casefold(),
+        ref.casefold(),
+        subpath.casefold(),
+    ])
+    url_hash = hashlib.sha256(hash_source.encode("utf-8")).hexdigest()[:12]
     return f"{provider.casefold()}_{safe_name}_{url_hash}"
 
 
@@ -222,21 +275,34 @@ def ensure_git_available():
 
 
 def clone_repository(reference, target_dir):
-    run_git(
-        [
-            "clone",
-            "--depth",
-            "1",
-            "--no-tags",
-            reference.clone_url,
-            target_dir,
-        ],
-        timeout=900,
-    )
+    command = [
+        "clone",
+        "--depth",
+        "1",
+        "--no-tags",
+    ]
+    if reference.subpath:
+        command.extend(["--filter=blob:none", "--sparse"])
+    if reference.ref:
+        command.extend(["--branch", reference.ref])
+    command.extend([reference.clone_url, target_dir])
+
+    run_git(command, timeout=900)
+    if reference.subpath:
+        run_git(["sparse-checkout", "set", "--cone", "--", reference.subpath], cwd=target_dir, timeout=300)
 
 
 def update_repository(target_dir):
     run_git(["pull", "--ff-only", "--depth", "1", "--no-tags"], cwd=target_dir, timeout=900)
+
+
+def get_repository_report_path(reference, target_dir):
+    if not reference.subpath:
+        return target_dir
+    report_path = os.path.join(target_dir, *reference.subpath.split("/"))
+    if not os.path.isdir(report_path):
+        raise RuntimeError(f"Папка репозитория не найдена после sparse checkout: {reference.subpath}")
+    return report_path
 
 
 def resolve_repository_path(raw_url):
@@ -252,10 +318,12 @@ def resolve_repository_path(raw_url):
     if os.path.isdir(os.path.join(target_dir, ".git")):
         print(f"Обновляю репозиторий {reference.provider}: {reference.display_name}")
         update_repository(target_dir)
+        if reference.subpath:
+            run_git(["sparse-checkout", "set", "--cone", "--", reference.subpath], cwd=target_dir, timeout=300)
     else:
         if os.path.exists(target_dir):
             raise RuntimeError(f"Путь кеша репозитория уже занят не git-папкой: {target_dir}")
         print(f"Клонирую репозиторий {reference.provider}: {reference.display_name}")
         clone_repository(reference, target_dir)
 
-    return target_dir
+    return get_repository_report_path(reference, target_dir)

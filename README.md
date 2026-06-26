@@ -17,8 +17,8 @@ python -m directory_structure_tool
 
 ## Структура
 
-- `directory_structure.py` - совместимая точка запуска.
-- `directory_structure_tool/` - пакет с логикой утилиты.
+- `directory_structure.py` - ручная точка запуска.
+- `directory_structure_tool/` - пакет с логикой утилиты и публичным API.
 - `tests/` - базовые unit-тесты без внешних зависимостей.
 
 ## Проверка
