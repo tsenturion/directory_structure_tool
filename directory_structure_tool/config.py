@@ -16,8 +16,8 @@ IGNORED_DIRS = {
     #'chunking_stages',
     #'embedding_stages',
     #'agent_app',
-    #'rag_data_prep.egg-info',
-    #'data',
+    'rag_data_prep.egg-info',
+    'data',
     #'playbooks',
 }
 
