@@ -1,6 +1,5 @@
 import os
 import shutil
-import subprocess
 import time
 import zipfile
 from datetime import datetime
@@ -8,6 +7,7 @@ from datetime import datetime
 from .config import ARCHIVE_EXTENSIONS, DOWNLOADS_DIR
 from .paths import format_elapsed_ago, is_subpath
 from .state import get_cached_archive_result, remember_archive_result
+from .subprocess_utils import run_hidden
 
 
 def format_archive_download_time(archive_path):
@@ -226,7 +226,7 @@ def extract_rar_to_dir(archive_path, target_dir):
         command.insert(2, "-ibck")
     command.extend([archive_path, target_dir + os.sep])
 
-    result = subprocess.run(
+    result = run_hidden(
         command,
         capture_output=True,
         text=True,
@@ -249,7 +249,7 @@ def list_rar_member_parts(archive_path):
     if os.path.basename(extractor).casefold() == "winrar.exe":
         return []
 
-    result = subprocess.run(
+    result = run_hidden(
         [extractor, "lb", archive_path],
         capture_output=True,
         text=True,

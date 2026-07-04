@@ -1,5 +1,6 @@
 import os
-import subprocess
+
+from .subprocess_utils import run_hidden
 
 
 def copy_text_to_clipboard(text):
@@ -70,11 +71,10 @@ def copy_text_to_clipboard(text):
         pass
 
     try:
-        subprocess.run(
-            "clip",
+        run_hidden(
+            ["clip"],
             input=text,
             text=True,
-            shell=True,
             encoding="utf-8",
             errors="replace",
             check=True

@@ -2,11 +2,11 @@ import hashlib
 import os
 import re
 import shutil
-import subprocess
 from dataclasses import dataclass
 from urllib.parse import ParseResult, quote, unquote, urlparse, urlunparse
 
 from .config import REPOSITORY_CACHE_DIR
+from .subprocess_utils import run_hidden
 
 
 KNOWN_REPOSITORY_HOSTS = {
@@ -254,7 +254,7 @@ def build_repository_cache_key(provider, clone_url, display_name, ref="", subpat
 
 
 def run_git(command, cwd=None, timeout=300):
-    result = subprocess.run(
+    result = run_hidden(
         ["git", *command],
         cwd=cwd,
         capture_output=True,
