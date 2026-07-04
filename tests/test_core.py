@@ -4,7 +4,7 @@ import tempfile
 import unittest
 import zipfile
 
-from directory_structure_tool import generate_report_text
+from directory_structure_tool import copy_text_to_clipboard, generate_report_text
 from directory_structure_tool.archives import normalize_archive_member_parts
 from directory_structure_tool.cli import write_report
 from directory_structure_tool.paths import is_subpath, sanitize_text_for_report
@@ -27,6 +27,9 @@ class PathTests(unittest.TestCase):
 
 
 class TextTests(unittest.TestCase):
+    def test_clipboard_copy_is_public_api(self):
+        self.assertTrue(callable(copy_text_to_clipboard))
+
     def test_sanitize_text_for_report_removes_control_chars(self):
         self.assertEqual(
             sanitize_text_for_report("a\x00b\x08\n\tc"),
