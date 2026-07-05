@@ -3,12 +3,18 @@ import os
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
 
 from directory_structure_tool import copy_text_to_clipboard, generate_report_text
 from directory_structure_tool.archives import normalize_archive_member_parts
 from directory_structure_tool.cli import write_report
 from directory_structure_tool.paths import is_subpath, sanitize_text_for_report
-from directory_structure_tool.repositories import get_repository_report_path, parse_repository_reference, redact_url_secrets
+from directory_structure_tool.repositories import (
+    clone_repository,
+    get_repository_report_path,
+    parse_repository_reference,
+    redact_url_secrets,
+)
 from directory_structure_tool.report import save_directory_structure
 
 
@@ -140,6 +146,17 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(reference.display_name, "Go")
         self.assertEqual(reference.ref, "main")
         self.assertEqual(reference.subpath, "GoPro/hw_1")
+        self.assertEqual(reference.subpath_kind, "directory")
+
+    def test_parse_github_repository_file_url(self):
+        reference = parse_repository_reference("https://github.com/octocat/Hello-World/blob/main/main.go")
+
+        self.assertEqual(reference.provider, "GitHub")
+        self.assertEqual(reference.clone_url, "https://github.com/octocat/Hello-World.git")
+        self.assertEqual(reference.display_name, "Hello-World")
+        self.assertEqual(reference.ref, "main")
+        self.assertEqual(reference.subpath, "main.go")
+        self.assertEqual(reference.subpath_kind, "file")
 
     def test_parse_gitlab_nested_repository_url(self):
         reference = parse_repository_reference("https://gitlab.com/group/subgroup/project/-/tree/main")
@@ -158,6 +175,26 @@ class RepositoryTests(unittest.TestCase):
             os.makedirs(report_dir)
 
             self.assertEqual(get_repository_report_path(reference, target_dir), report_dir)
+
+    def test_repository_report_path_uses_file_parent(self):
+        reference = parse_repository_reference("https://github.com/octocat/Hello-World/blob/main/cmd/main.go")
+        with tempfile.TemporaryDirectory() as root:
+            target_dir = os.path.join(root, "repo")
+            report_dir = os.path.join(target_dir, "cmd")
+            os.makedirs(report_dir)
+            with open(os.path.join(report_dir, "main.go"), "w", encoding="utf-8") as file:
+                file.write("package main\n")
+
+            self.assertEqual(get_repository_report_path(reference, target_dir), report_dir)
+
+    def test_clone_repository_uses_non_cone_sparse_checkout_for_file(self):
+        reference = parse_repository_reference("https://github.com/octocat/Hello-World/blob/main/main.go")
+
+        with patch("directory_structure_tool.repositories.run_git") as run_git_mock:
+            clone_repository(reference, "repo")
+
+        commands = [call.args[0] for call in run_git_mock.call_args_list]
+        self.assertIn(["sparse-checkout", "set", "--no-cone", "--", "main.go"], commands)
 
     def test_parse_gitflic_repository_url(self):
         reference = parse_repository_reference("https://gitflic.ru/project/dbi471/git-switch")

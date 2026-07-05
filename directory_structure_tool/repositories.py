@@ -31,6 +31,7 @@ class RepositoryReference:
     cache_key: str
     ref: str = ""
     subpath: str = ""
+    subpath_kind: str = ""
 
 
 def normalize_host(host):
@@ -70,47 +71,53 @@ def normalize_repository_subpath(parts):
 
 def parse_web_ref_and_subpath(parts):
     if not parts:
-        return "", ""
+        return "", "", ""
     marker = parts[0]
     if marker not in {"tree", "blob", "src"} or len(parts) < 2:
-        return "", ""
+        return "", "", ""
     ref = parts[1]
     subpath = normalize_repository_subpath(parts[2:])
-    return ref, subpath
+    subpath_kind = "file" if marker == "blob" and subpath else "directory"
+    return ref, subpath, subpath_kind
 
 
-def split_http_repository_parts(parsed, host):
+def split_http_repository_parts_with_kind(parsed, host):
     parts = split_repo_path(parsed.path)
     if not parts:
-        return [], "", ""
+        return [], "", "", ""
 
     if host == "gitlab.com" and "-" in parts:
         marker_index = parts.index("-")
         repo_parts = parts[:marker_index]
-        ref, subpath = parse_web_ref_and_subpath(parts[marker_index + 1:])
-        return repo_parts, ref, subpath
+        ref, subpath, subpath_kind = parse_web_ref_and_subpath(parts[marker_index + 1:])
+        return repo_parts, ref, subpath, subpath_kind
 
     if host in {"github.com", "gitverse.ru"} and len(parts) >= 2:
         repo_parts = parts[:2]
-        ref, subpath = parse_web_ref_and_subpath(parts[2:])
-        return repo_parts, ref, subpath
+        ref, subpath, subpath_kind = parse_web_ref_and_subpath(parts[2:])
+        return repo_parts, ref, subpath, subpath_kind
 
     if host == SOURCECRAFT_WEB_HOST and len(parts) >= 2:
         repo_parts = parts[:2]
-        ref, subpath = parse_web_ref_and_subpath(parts[2:])
-        return repo_parts, ref, subpath
+        ref, subpath, subpath_kind = parse_web_ref_and_subpath(parts[2:])
+        return repo_parts, ref, subpath, subpath_kind
 
     if host == "gitflic.ru":
         if parts[0] == "project" and len(parts) >= 3:
             repo_parts = parts[:3]
-            ref, subpath = parse_web_ref_and_subpath(parts[3:])
-            return repo_parts, ref, subpath
+            ref, subpath, subpath_kind = parse_web_ref_and_subpath(parts[3:])
+            return repo_parts, ref, subpath, subpath_kind
         if len(parts) >= 2:
             repo_parts = ["project", *parts[:2]]
-            ref, subpath = parse_web_ref_and_subpath(parts[2:])
-            return repo_parts, ref, subpath
+            ref, subpath, subpath_kind = parse_web_ref_and_subpath(parts[2:])
+            return repo_parts, ref, subpath, subpath_kind
 
-    return trim_web_path(parts), "", ""
+    return trim_web_path(parts), "", "", ""
+
+
+def split_http_repository_parts(parsed, host):
+    repo_parts, ref, subpath, _ = split_http_repository_parts_with_kind(parsed, host)
+    return repo_parts, ref, subpath
 
 
 def get_provider_for_host(host, path_parts):
@@ -160,7 +167,7 @@ def parse_http_repository_url(value):
         return None
 
     host = normalize_host(parsed.hostname)
-    parts, ref, subpath = split_http_repository_parts(parsed, host)
+    parts, ref, subpath, subpath_kind = split_http_repository_parts_with_kind(parsed, host)
     provider = get_provider_for_host(host, parts)
     if not provider or not parts:
         return None
@@ -179,6 +186,7 @@ def parse_http_repository_url(value):
         cache_key=build_repository_cache_key(provider, clone_url, display_name, ref=ref, subpath=subpath),
         ref=ref,
         subpath=subpath,
+        subpath_kind=subpath_kind,
     )
 
 
@@ -289,7 +297,12 @@ def clone_repository(reference, target_dir):
 
     run_git(command, timeout=900)
     if reference.subpath:
-        run_git(["sparse-checkout", "set", "--cone", "--", reference.subpath], cwd=target_dir, timeout=300)
+        apply_sparse_checkout(reference, target_dir)
+
+
+def apply_sparse_checkout(reference, target_dir):
+    mode_option = "--no-cone" if reference.subpath_kind == "file" else "--cone"
+    run_git(["sparse-checkout", "set", mode_option, "--", reference.subpath], cwd=target_dir, timeout=300)
 
 
 def update_repository(target_dir):
@@ -300,6 +313,10 @@ def get_repository_report_path(reference, target_dir):
     if not reference.subpath:
         return target_dir
     report_path = os.path.join(target_dir, *reference.subpath.split("/"))
+    if reference.subpath_kind == "file":
+        if not os.path.isfile(report_path):
+            raise RuntimeError(f"Файл репозитория не найден после sparse checkout: {reference.subpath}")
+        return os.path.dirname(report_path)
     if not os.path.isdir(report_path):
         raise RuntimeError(f"Папка репозитория не найдена после sparse checkout: {reference.subpath}")
     return report_path
@@ -319,7 +336,7 @@ def resolve_repository_path(raw_url):
         print(f"Обновляю репозиторий {reference.provider}: {reference.display_name}")
         update_repository(target_dir)
         if reference.subpath:
-            run_git(["sparse-checkout", "set", "--cone", "--", reference.subpath], cwd=target_dir, timeout=300)
+            apply_sparse_checkout(reference, target_dir)
     else:
         if os.path.exists(target_dir):
             raise RuntimeError(f"Путь кеша репозитория уже занят не git-папкой: {target_dir}")
