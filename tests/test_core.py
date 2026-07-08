@@ -1,4 +1,5 @@
 import io
+import importlib.util
 import os
 import tempfile
 import unittest
@@ -121,6 +122,26 @@ class ReportTests(unittest.TestCase):
             archive_path = os.path.join(root, "work.zip")
             with zipfile.ZipFile(archive_path, "w") as archive:
                 archive.writestr("project/main.go", "package main\n")
+
+            report = generate_report_text(archive_path)
+
+            self.assertIn("- main.go", report)
+            self.assertIn("package main", report)
+
+    @unittest.skipUnless(importlib.util.find_spec("py7zr"), "py7zr не установлен")
+    def test_generate_report_text_supports_7z_archive(self):
+        import py7zr
+
+        with tempfile.TemporaryDirectory() as root:
+            source_dir = os.path.join(root, "project")
+            os.makedirs(source_dir)
+            source_file = os.path.join(source_dir, "main.go")
+            with open(source_file, "w", encoding="utf-8") as file:
+                file.write("package main\n")
+
+            archive_path = os.path.join(root, "work.7z")
+            with py7zr.SevenZipFile(archive_path, "w") as archive:
+                archive.write(source_file, arcname="project/main.go")
 
             report = generate_report_text(archive_path)
 

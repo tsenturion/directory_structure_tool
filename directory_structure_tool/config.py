@@ -38,6 +38,6 @@ SCRIPT_DIR = os.path.dirname(PACKAGE_DIR)
 STATE_FILE = os.path.join(SCRIPT_DIR, ".directory_structure_state.json")
 DOWNLOADS_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
 REPOSITORY_CACHE_DIR = os.path.join(SCRIPT_DIR, ".directory_structure_repos")
-ARCHIVE_EXTENSIONS = {'.zip', '.rar'}
+ARCHIVE_EXTENSIONS = {'.zip', '.rar', '.7z'}
 TEXT_ENCODINGS = ("utf-8-sig", "utf-16", "cp1251")
 BINARY_CHECK_BYTES = 4096

@@ -19,7 +19,7 @@ def format_archive_download_time(archive_path):
 
 
 def find_latest_archive(downloads_dir=DOWNLOADS_DIR):
-    """Возвращает самый новый zip/rar архив из папки загрузок."""
+    """Возвращает самый новый поддерживаемый архив из папки загрузок."""
     if not os.path.isdir(downloads_dir):
         return None
 
@@ -121,6 +121,8 @@ def extract_archive_to_dir(archive_path, target_dir):
         extract_zip_to_dir(archive_path, target_dir)
     elif archive_ext == ".rar":
         extract_rar_to_dir(archive_path, target_dir)
+    elif archive_ext == ".7z":
+        extract_7z_to_dir(archive_path, target_dir)
     else:
         raise RuntimeError(f"Неподдерживаемый тип архива: {archive_ext}")
 
@@ -134,6 +136,50 @@ def list_zip_member_parts(archive_path):
             if parts:
                 members.append((parts, member.is_dir()))
     return members
+
+
+def require_py7zr():
+    try:
+        import py7zr
+    except ImportError as e:
+        raise RuntimeError("Для .7z нужен пакет py7zr.") from e
+    return py7zr
+
+
+def list_7z_member_parts(archive_path):
+    """Возвращает безопасные пути 7z-элементов."""
+    py7zr = require_py7zr()
+    members = []
+    with py7zr.SevenZipFile(archive_path, mode="r") as archive:
+        for member in archive.list():
+            filename = getattr(member, "filename", "")
+            parts = normalize_archive_member_parts(filename)
+            if parts:
+                members.append((parts, bool(getattr(member, "is_directory", False))))
+    return members
+
+
+def extract_7z_to_dir(archive_path, target_dir):
+    """Безопасно распаковывает 7z в указанную папку."""
+    py7zr = require_py7zr()
+    target_abs = os.path.abspath(target_dir)
+    safe_targets = []
+    with py7zr.SevenZipFile(archive_path, mode="r") as archive:
+        for member in archive.list():
+            filename = getattr(member, "filename", "")
+            parts = normalize_archive_member_parts(filename)
+            if parts is None:
+                raise RuntimeError(f"Небезопасный путь внутри архива: {filename}")
+            if not parts:
+                continue
+
+            target_path = os.path.abspath(os.path.join(target_abs, *parts))
+            if not is_subpath(target_path, target_abs):
+                raise RuntimeError(f"Небезопасный путь внутри архива: {filename}")
+            safe_targets.append(filename)
+
+        if safe_targets:
+            archive.extract(path=target_abs, targets=safe_targets)
 
 
 def get_winrar_registry_paths():
@@ -276,6 +322,8 @@ def list_archive_member_parts(archive_path):
         return list_zip_member_parts(archive_path)
     if ext == ".rar":
         return list_rar_member_parts(archive_path)
+    if ext == ".7z":
+        return list_7z_member_parts(archive_path)
     return []
 
 
