@@ -19,6 +19,7 @@ IGNORED_DIRS = {
     'rag_data_prep.egg-info',
     'data',
     #'playbooks',
+    'mlruns',
 }
 
 IGNORED_FILE_EXTENSIONS = {'.user'}
