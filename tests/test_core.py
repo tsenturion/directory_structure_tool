@@ -15,6 +15,7 @@ from directory_structure_tool.repositories import (
     get_repository_report_path,
     parse_repository_reference,
     redact_url_secrets,
+    write_git_blob_to_worktree,
 )
 from directory_structure_tool.report import save_directory_structure
 
@@ -150,6 +151,24 @@ class ReportTests(unittest.TestCase):
 
 
 class RepositoryTests(unittest.TestCase):
+    def test_write_git_blob_normalizes_trailing_space_without_losing_content(self):
+        with tempfile.TemporaryDirectory() as root:
+            content = b"class MockLLMClient:\n    pass\n"
+            write_git_blob_to_worktree(root, "llm/mock_client.py ", content)
+
+            extracted_path = os.path.join(root, "llm", "mock_client.py")
+            with open(extracted_path, "rb") as extracted:
+                self.assertEqual(extracted.read(), content)
+
+    def test_write_git_blob_overwrites_normalized_name_collision(self):
+        with tempfile.TemporaryDirectory() as root:
+            write_git_blob_to_worktree(root, "mock_client.py", b"normal\n")
+            write_git_blob_to_worktree(root, "mock_client.py ", b"trailing-space\n")
+
+            self.assertEqual(os.listdir(root), ["mock_client.py"])
+            with open(os.path.join(root, "mock_client.py"), "rb") as extracted:
+                self.assertEqual(extracted.read(), b"trailing-space\n")
+
     def test_parse_github_repository_url(self):
         reference = parse_repository_reference("https://github.com/octocat/Hello-World")
 
@@ -216,6 +235,23 @@ class RepositoryTests(unittest.TestCase):
 
         commands = [call.args[0] for call in run_git_mock.call_args_list]
         self.assertIn(["sparse-checkout", "set", "--no-cone", "--", "main.go"], commands)
+
+    def test_clone_repository_recovers_from_windows_invalid_path(self):
+        reference = parse_repository_reference("https://github.com/example/project.git")
+        with tempfile.TemporaryDirectory() as root:
+            target_dir = os.path.join(root, "repo")
+
+            def fail_checkout(*args, **kwargs):
+                os.makedirs(os.path.join(target_dir, ".git"))
+                raise RuntimeError("error: invalid path 'llm/mock_client.py '")
+
+            with (
+                patch("directory_structure_tool.repositories.run_git", side_effect=fail_checkout),
+                patch("directory_structure_tool.repositories.materialize_repository_without_checkout") as materialize,
+            ):
+                clone_repository(reference, target_dir)
+
+            materialize.assert_called_once_with(reference, target_dir)
 
     def test_parse_gitflic_repository_url(self):
         reference = parse_repository_reference("https://gitflic.ru/project/dbi471/git-switch")

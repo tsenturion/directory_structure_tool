@@ -21,6 +21,12 @@ SOURCECRAFT_WEB_HOST = "sourcecraft.dev"
 SOURCECRAFT_GIT_HOST = "git.sourcecraft.dev"
 WEB_PATH_MARKERS = {"-", "tree", "blob", "src", "commit", "commits", "branches", "merge_requests", "pulls"}
 SCP_LIKE_GIT_URL_RE = re.compile(r"^(?P<user>[^@\s]+)@(?P<host>[^:\s]+):(?P<path>.+)$")
+WINDOWS_INVALID_NAME_CHARS_RE = re.compile(r'[<>:"\\|?*\x00-\x1f]')
+WINDOWS_RESERVED_NAMES = {
+    "con", "prn", "aux", "nul",
+    *(f"com{index}" for index in range(1, 10)),
+    *(f"lpt{index}" for index in range(1, 10)),
+}
 
 
 @dataclass(frozen=True)
@@ -282,6 +288,111 @@ def ensure_git_available():
         raise RuntimeError("Для работы с удаленными репозиториями нужен установленный git.")
 
 
+def normalize_git_path_part(part):
+    """Приводит часть пути Git к имени, которое можно создать в Windows."""
+    normalized = WINDOWS_INVALID_NAME_CHARS_RE.sub("_", part).rstrip(" .")
+    if not normalized:
+        normalized = "_"
+
+    stem = normalized.split(".", 1)[0].casefold()
+    if stem in WINDOWS_RESERVED_NAMES:
+        normalized = f"{normalized}_"
+    return normalized
+
+
+def normalize_git_path_parts(path):
+    """Возвращает безопасные переносимые части пути из Git-архива."""
+    if "\x00" in path or path.startswith("/"):
+        return None
+
+    parts = path.rstrip("/").split("/")
+    if not parts or any(part in ("", ".", "..") for part in parts):
+        return None
+    return [normalize_git_path_part(part) for part in parts]
+
+
+def list_git_blob_entries(target_dir, subpath=""):
+    command = ["git", "ls-tree", "-r", "-z", "--full-tree", "HEAD"]
+    if subpath:
+        command.extend(["--", subpath])
+
+    result = run_hidden(
+        command,
+        cwd=target_dir,
+        capture_output=True,
+        timeout=900,
+    )
+    if result.returncode != 0:
+        output = (result.stderr or result.stdout or b"").decode("utf-8", errors="replace").strip()
+        raise RuntimeError(redact_url_secrets(output or f"git ls-tree завершился с кодом {result.returncode}"))
+
+    entries = []
+    for record in result.stdout.split(b"\x00"):
+        if not record:
+            continue
+        metadata, separator, raw_path = record.partition(b"\t")
+        if not separator:
+            continue
+        fields = metadata.decode("ascii", errors="replace").split()
+        if len(fields) != 3 or fields[1] != "blob":
+            continue
+        entries.append((raw_path.decode("utf-8", errors="replace"), fields[2]))
+    return entries
+
+
+def read_git_blob(target_dir, object_id):
+    result = run_hidden(
+        ["git", "cat-file", "blob", object_id],
+        cwd=target_dir,
+        capture_output=True,
+        timeout=300,
+    )
+    if result.returncode != 0:
+        output = (result.stderr or result.stdout or b"").decode("utf-8", errors="replace").strip()
+        raise RuntimeError(redact_url_secrets(output or f"git cat-file завершился с кодом {result.returncode}"))
+    return result.stdout
+
+
+def write_git_blob_to_worktree(target_dir, repository_path, content):
+    """Записывает blob Git под совместимым с Windows именем без изменения содержимого."""
+    normalized_parts = normalize_git_path_parts(repository_path)
+    if not normalized_parts:
+        return None
+
+    target_path = os.path.join(target_dir, *normalized_parts)
+    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+    if os.path.isdir(target_path):
+        shutil.rmtree(target_path)
+    with open(target_path, "wb") as target:
+        target.write(content)
+    return target_path
+
+
+def clear_repository_worktree(target_dir):
+    for entry in os.scandir(target_dir):
+        if entry.name == ".git":
+            continue
+        if entry.is_dir(follow_symlinks=False):
+            shutil.rmtree(entry.path)
+        else:
+            os.unlink(entry.path)
+
+
+def materialize_repository_without_checkout(reference, target_dir):
+    entries = list_git_blob_entries(target_dir, reference.subpath)
+    clear_repository_worktree(target_dir)
+    for repository_path, object_id in entries:
+        content = read_git_blob(target_dir, object_id)
+        write_git_blob_to_worktree(target_dir, repository_path, content)
+
+
+def can_recover_invalid_checkout(error, target_dir):
+    return (
+        "invalid path" in str(error).casefold()
+        and os.path.isdir(os.path.join(target_dir, ".git"))
+    )
+
+
 def clone_repository(reference, target_dir):
     command = [
         "clone",
@@ -295,9 +406,14 @@ def clone_repository(reference, target_dir):
         command.extend(["--branch", reference.ref])
     command.extend([reference.clone_url, target_dir])
 
-    run_git(command, timeout=900)
-    if reference.subpath:
-        apply_sparse_checkout(reference, target_dir)
+    try:
+        run_git(command, timeout=900)
+        if reference.subpath:
+            apply_sparse_checkout(reference, target_dir)
+    except RuntimeError as error:
+        if not can_recover_invalid_checkout(error, target_dir):
+            raise
+        materialize_repository_without_checkout(reference, target_dir)
 
 
 def apply_sparse_checkout(reference, target_dir):
@@ -313,6 +429,10 @@ def get_repository_report_path(reference, target_dir):
     if not reference.subpath:
         return target_dir
     report_path = os.path.join(target_dir, *reference.subpath.split("/"))
+    if not os.path.exists(report_path):
+        normalized_parts = normalize_git_path_parts(reference.subpath)
+        if normalized_parts:
+            report_path = os.path.join(target_dir, *normalized_parts)
     if reference.subpath_kind == "file":
         if not os.path.isfile(report_path):
             raise RuntimeError(f"Файл репозитория не найден после sparse checkout: {reference.subpath}")
