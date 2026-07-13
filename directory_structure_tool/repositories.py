@@ -2,7 +2,7 @@ import hashlib
 import os
 import re
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from urllib.parse import ParseResult, quote, unquote, urlparse, urlunparse
 
 from .config import REPOSITORY_CACHE_DIR
@@ -288,6 +288,52 @@ def ensure_git_available():
         raise RuntimeError("Для работы с удаленными репозиториями нужен установленный git.")
 
 
+def list_remote_heads(clone_url):
+    """Возвращает имена веток удаленного репозитория."""
+    try:
+        output = run_git(["ls-remote", "--heads", clone_url], timeout=300)
+    except RuntimeError:
+        return set()
+
+    heads = set()
+    prefix = "refs/heads/"
+    for line in output.splitlines():
+        _, separator, remote_ref = line.partition("\t")
+        if separator and remote_ref.startswith(prefix):
+            heads.add(remote_ref[len(prefix):])
+    return heads
+
+
+def resolve_remote_reference(reference):
+    """Уточняет границу между веткой с '/' и путем внутри репозитория."""
+    if not reference.ref or not reference.subpath:
+        return reference
+
+    path_parts = [reference.ref, *reference.subpath.split("/")]
+    remote_heads = list_remote_heads(reference.clone_url)
+    for part_count in range(len(path_parts), 0, -1):
+        candidate_ref = "/".join(path_parts[:part_count])
+        if candidate_ref not in remote_heads:
+            continue
+
+        subpath = "/".join(path_parts[part_count:])
+        if candidate_ref == reference.ref and subpath == reference.subpath:
+            return reference
+        return replace(
+            reference,
+            ref=candidate_ref,
+            subpath=subpath,
+            cache_key=build_repository_cache_key(
+                reference.provider,
+                reference.clone_url,
+                reference.display_name,
+                ref=candidate_ref,
+                subpath=subpath,
+            ),
+        )
+    return reference
+
+
 def normalize_git_path_part(part):
     """Приводит часть пути Git к имени, которое можно создать в Windows."""
     normalized = WINDOWS_INVALID_NAME_CHARS_RE.sub("_", part).rstrip(" .")
@@ -394,6 +440,7 @@ def can_recover_invalid_checkout(error, target_dir):
 
 
 def clone_repository(reference, target_dir):
+    reference = resolve_remote_reference(reference)
     command = [
         "clone",
         "--depth",
@@ -414,6 +461,7 @@ def clone_repository(reference, target_dir):
         if not can_recover_invalid_checkout(error, target_dir):
             raise
         materialize_repository_without_checkout(reference, target_dir)
+    return reference
 
 
 def apply_sparse_checkout(reference, target_dir):
@@ -449,6 +497,7 @@ def resolve_repository_path(raw_url):
         raise RuntimeError("URL не похож на поддерживаемый git-репозиторий.")
 
     ensure_git_available()
+    reference = resolve_remote_reference(reference)
     os.makedirs(REPOSITORY_CACHE_DIR, exist_ok=True)
     target_dir = os.path.join(REPOSITORY_CACHE_DIR, reference.cache_key)
 

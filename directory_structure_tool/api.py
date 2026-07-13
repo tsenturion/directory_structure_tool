@@ -28,7 +28,7 @@ def resolved_report_source(source):
         if reference:
             temp_root = tempfile.mkdtemp(prefix="directory_structure_repo_")
             target_dir = os.path.join(temp_root, reference.display_name or "repository")
-            clone_repository(reference, target_dir)
+            reference = clone_repository(reference, target_dir)
             yield get_repository_report_path(reference, target_dir)
             return
 

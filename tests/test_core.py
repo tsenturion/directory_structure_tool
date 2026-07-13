@@ -15,6 +15,7 @@ from directory_structure_tool.repositories import (
     get_repository_report_path,
     parse_repository_reference,
     redact_url_secrets,
+    resolve_remote_reference,
     write_git_blob_to_worktree,
 )
 from directory_structure_tool.report import save_directory_structure
@@ -187,6 +188,36 @@ class RepositoryTests(unittest.TestCase):
         self.assertEqual(reference.ref, "main")
         self.assertEqual(reference.subpath, "GoPro/hw_1")
         self.assertEqual(reference.subpath_kind, "directory")
+
+    def test_resolve_remote_reference_uses_longest_branch_with_slash(self):
+        reference = parse_repository_reference(
+            "https://github.com/Dominnik/pipeline_final/tree/feature/llm-summary-service"
+        )
+        remote_heads = "\n".join([
+            "dc767acd\trefs/heads/backup/main-complete",
+            "792ec475\trefs/heads/feature/llm-summary-service",
+            "e0ac69ed\trefs/heads/main",
+        ])
+
+        with patch("directory_structure_tool.repositories.run_git", return_value=remote_heads):
+            resolved = resolve_remote_reference(reference)
+
+        self.assertEqual(resolved.ref, "feature/llm-summary-service")
+        self.assertEqual(resolved.subpath, "")
+
+    def test_resolve_remote_reference_keeps_folder_after_simple_branch(self):
+        reference = parse_repository_reference(
+            "https://github.com/octocat/Hello-World/tree/main/homework"
+        )
+
+        with patch(
+            "directory_structure_tool.repositories.run_git",
+            return_value="e0ac69ed\trefs/heads/main",
+        ):
+            resolved = resolve_remote_reference(reference)
+
+        self.assertEqual(resolved.ref, "main")
+        self.assertEqual(resolved.subpath, "homework")
 
     def test_parse_github_repository_file_url(self):
         reference = parse_repository_reference("https://github.com/octocat/Hello-World/blob/main/main.go")
