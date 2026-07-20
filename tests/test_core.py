@@ -78,6 +78,78 @@ class ReportTests(unittest.TestCase):
             self.assertNotIn(".git", report)
             self.assertNotIn("package-lock.json", report)
 
+    def test_save_directory_structure_respects_gitignore(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.mkdir(os.path.join(root, "ignored_dir"))
+            with open(os.path.join(root, ".gitignore"), "w", encoding="utf-8") as file:
+                file.write("*.log\nignored_dir/\n!important.log\n")
+            with open(os.path.join(root, "debug.log"), "w", encoding="utf-8") as file:
+                file.write("debug\n")
+            with open(os.path.join(root, "important.log"), "w", encoding="utf-8") as file:
+                file.write("important\n")
+            with open(os.path.join(root, "ignored_dir", "secret.txt"), "w", encoding="utf-8") as file:
+                file.write("secret\n")
+
+            output = io.StringIO()
+            save_directory_structure(root, output)
+            report = output.getvalue()
+
+            self.assertNotIn("debug.log", report)
+            self.assertNotIn("[Папка] ignored_dir/", report)
+            self.assertIn("important.log", report)
+
+    def test_save_directory_structure_respects_nested_gitignore(self):
+        with tempfile.TemporaryDirectory() as root:
+            nested_dir = os.path.join(root, "nested")
+            os.mkdir(nested_dir)
+            with open(os.path.join(root, ".gitignore"), "w", encoding="utf-8") as file:
+                file.write("*.tmp\n")
+            with open(os.path.join(nested_dir, ".gitignore"), "w", encoding="utf-8") as file:
+                file.write("!keep.tmp\n")
+            with open(os.path.join(nested_dir, "drop.tmp"), "w", encoding="utf-8") as file:
+                file.write("drop\n")
+            with open(os.path.join(nested_dir, "keep.tmp"), "w", encoding="utf-8") as file:
+                file.write("keep\n")
+
+            output = io.StringIO()
+            save_directory_structure(root, output)
+            report = output.getvalue()
+
+            self.assertNotIn("drop.tmp", report)
+            self.assertIn("keep.tmp", report)
+
+    def test_save_directory_structure_uses_gitignore_above_selected_subfolder(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.mkdir(os.path.join(root, ".git"))
+            nested_dir = os.path.join(root, "nested")
+            os.mkdir(nested_dir)
+            with open(os.path.join(root, ".gitignore"), "w", encoding="utf-8") as file:
+                file.write("*.tmp\n")
+            with open(os.path.join(nested_dir, "ignored.tmp"), "w", encoding="utf-8") as file:
+                file.write("ignored\n")
+            with open(os.path.join(nested_dir, "included.txt"), "w", encoding="utf-8") as file:
+                file.write("included\n")
+
+            output = io.StringIO()
+            save_directory_structure(nested_dir, output)
+            report = output.getvalue()
+
+            self.assertNotIn("ignored.tmp", report)
+            self.assertIn("included.txt", report)
+
+    def test_save_directory_structure_can_disable_gitignore(self):
+        with tempfile.TemporaryDirectory() as root:
+            with open(os.path.join(root, ".gitignore"), "w", encoding="utf-8") as file:
+                file.write("ignored.txt\n")
+            with open(os.path.join(root, "ignored.txt"), "w", encoding="utf-8") as file:
+                file.write("visible when disabled\n")
+
+            output = io.StringIO()
+            with patch("directory_structure_tool.report.RESPECT_GITIGNORE", False):
+                save_directory_structure(root, output)
+
+            self.assertIn("ignored.txt", output.getvalue())
+
     def test_generate_report_text_supports_single_file(self):
         with tempfile.TemporaryDirectory() as root:
             file_path = os.path.join(root, "main.go")

@@ -30,6 +30,8 @@ IGNORED_FILES = {
     '00-network-check.yaml',
     'k8s_full_cleanup.yaml'
 }
+# При True файлы и папки, исключенные правилами .gitignore, не попадают в отчет.
+RESPECT_GITIGNORE = True
 #NAMES_ONLY_DIRS = {'swaggerui'}
 NAMES_ONLY_DIRS = {}
 # Хардкод-настройки запуска

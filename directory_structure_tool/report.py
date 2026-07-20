@@ -1,12 +1,15 @@
 import io
 import os
 
+from pathspec import GitIgnoreSpec
+
 from .config import (
     BINARY_CHECK_BYTES,
     IGNORED_DIRS,
     IGNORED_FILE_EXTENSIONS,
     IGNORED_FILES,
     NAMES_ONLY_DIRS,
+    RESPECT_GITIGNORE,
     TEXT_ENCODINGS,
 )
 from .paths import is_subpath, sanitize_text_for_report, vscode_name_key
@@ -71,8 +74,83 @@ def should_skip_file_content(file_path):
     return control_bytes / len(sample) > 0.2
 
 
-def save_directory_structure(root_path, output_file, indent=0, names_only_dirs=None, names_only_mode=False):
+def load_gitignore_spec(directory):
+    gitignore_path = os.path.join(directory, ".gitignore")
+    try:
+        with open(gitignore_path, "r", encoding="utf-8-sig", errors="replace") as gitignore_file:
+            return GitIgnoreSpec.from_lines(gitignore_file)
+    except (OSError, UnicodeError):
+        return None
+
+
+def find_git_root(path):
+    current_path = os.path.abspath(path)
+    while True:
+        if os.path.exists(os.path.join(current_path, ".git")):
+            return current_path
+        parent_path = os.path.dirname(current_path)
+        if parent_path == current_path:
+            return None
+        current_path = parent_path
+
+
+def load_initial_gitignore_specs(root_path):
+    root_path = os.path.abspath(root_path)
+    git_root = find_git_root(root_path)
+    first_path = git_root or root_path
+    relative_parts = os.path.relpath(root_path, first_path).split(os.sep)
+    directories = [first_path]
+    for part in relative_parts:
+        if part != os.curdir:
+            directories.append(os.path.join(directories[-1], part))
+
+    gitignore_specs = []
+    for directory in directories:
+        spec = load_gitignore_spec(directory)
+        if spec is not None:
+            gitignore_specs.append((directory, spec))
+    return gitignore_specs
+
+
+def is_gitignored(path, is_dir, gitignore_specs):
+    ignored = False
+    for base_path, spec in gitignore_specs:
+        try:
+            relative_path = os.path.relpath(path, base_path)
+        except ValueError:
+            continue
+        if relative_path == os.pardir or relative_path.startswith(os.pardir + os.sep):
+            continue
+
+        git_path = relative_path.replace(os.sep, "/")
+        if is_dir:
+            git_path += "/"
+        result = spec.check_file(git_path)
+        if result.include is not None:
+            ignored = result.include
+    return ignored
+
+
+def save_directory_structure(
+    root_path,
+    output_file,
+    indent=0,
+    names_only_dirs=None,
+    names_only_mode=False,
+    _gitignore_specs=None,
+):
     """Рекурсивно сохраняет структуру каталога и содержимое допустимых файлов."""
+    if RESPECT_GITIGNORE:
+        if _gitignore_specs is None:
+            gitignore_specs = load_initial_gitignore_specs(root_path)
+        else:
+            gitignore_specs = list(_gitignore_specs)
+            gitignore_spec = load_gitignore_spec(root_path)
+            if gitignore_spec is not None:
+                gitignore_specs.append((os.path.abspath(root_path), gitignore_spec))
+    else:
+        gitignore_specs = []
+
     try:
         entries = list(os.scandir(root_path))
     except PermissionError:
@@ -89,18 +167,29 @@ def save_directory_structure(root_path, output_file, indent=0, names_only_dirs=N
         if entry.is_dir():
             if entry.name in IGNORED_DIRS:
                 continue
+            if RESPECT_GITIGNORE and is_gitignored(entry.path, True, gitignore_specs):
+                continue
             dir_entries.append(entry.name)
 
         elif entry.is_file():
             _, ext = os.path.splitext(entry.name)
             if ext in IGNORED_FILE_EXTENSIONS or entry.name in IGNORED_FILES:
                 continue
+            if RESPECT_GITIGNORE and is_gitignored(entry.path, False, gitignore_specs):
+                continue
             file_entries.append(entry.name)
 
     for entry in sorted(dir_entries, key=vscode_name_key):
         full_path = os.path.join(root_path, entry)
         output_file.write(" " * indent + f"[Папка] {entry}/\n")
-        save_directory_structure(full_path, output_file, indent + 4, names_only_dirs, names_only_mode)
+        save_directory_structure(
+            full_path,
+            output_file,
+            indent + 4,
+            names_only_dirs,
+            names_only_mode,
+            gitignore_specs,
+        )
 
     for entry in sorted(file_entries, key=vscode_name_key):
         full_path = os.path.join(root_path, entry)
